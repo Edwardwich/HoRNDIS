@@ -29,8 +29,8 @@ jobs:
         run: |
           src=$(/usr/bin/curl -Lfs https://raw.githubusercontent.com/acidanthera/Lilu/master/Lilu/Scripts/bootstrap.sh) && eval "$src" || exit 1
 
-      - run: xcodebuild -jobs 1 -target Package -configuration Debug
-      - run: xcodebuild -jobs 1 -target Package -configuration Release
+      - run: xcodebuild -configuration=Release
+      - run: xcodebuild -configuration=Release
 
       - name: Upload to Artifacts
         uses: actions/upload-artifact@v3
