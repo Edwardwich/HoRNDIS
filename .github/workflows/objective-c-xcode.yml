@@ -30,13 +30,11 @@ jobs:
           src=$(/usr/bin/curl -Lfs https://raw.githubusercontent.com/acidanthera/Lilu/master/Lilu/Scripts/bootstrap.sh) && eval "$src" || exit 1
 
       - run: xcodebuild -configuration=Release
-      - run: xcodebuild -configuration=Release
-
       - name: Upload to Artifacts
         uses: actions/upload-artifact@v3
         with:
           name: Artifacts
-          path: build/*/*/*.zip
+          path: build/Release/*.zip
       - name: Upload to Release
         if: github.event_name == 'release'
         uses: svenstaro/upload-release-action@e74ff71f7d8a4c4745b560a485cc5fdb9b5b999d
