@@ -16,6 +16,7 @@ jobs:
     runs-on: macos-latest
     env:
       JOB_TYPE: BUILD
+      DEVELOPER_DIR: /Applications/Xcode_14.3.1.app/Contents/Developer
     steps:
       - name: Checkout repository
         uses: actions/checkout@v3
@@ -37,6 +38,12 @@ jobs:
       - name: Build project
         run: xcodebuild -configuration=Release
 
+      - name: List output files
+        run: ls -alh ./*.zip
+
+      - name: Package output
+        run: zip -r output.zip path/to/your/output/directory/* # Ensure this points to the correct output directory
+
       - name: Upload Artifacts
         uses: actions/upload-artifact@v3
         with:
@@ -48,9 +55,9 @@ jobs:
         if: github.event_name != 'pull_request'
         with:
           repo_token: ${{ secrets.GITHUB_TOKEN }}
-          file: ./*.zip
+          file: output.zip # Update this if your zip file has a different name or path
           tag: ${{ github.ref }}
           release_name: HoRNDIS
-          body: ${{ github.event_name != 'release' && github.event.head_commit.message || '' }}
-          file_glob: true
+          body: Update objective-c-xcode.yml
+          file_glob: false # Set to false if specifying individual files
           overwrite: true
