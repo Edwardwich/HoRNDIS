@@ -38,11 +38,11 @@ jobs:
       - name: Build project
         run: xcodebuild -configuration=Release
 
-      - name: List output files
-        run: ls -alh ./*.zip
+      - name: List build output files
+        run: ls -alh build/Release # Check if there are files in the output directory
 
-      - name: Package output
-        run: zip -r output.zip path/to/your/output/directory/* # Ensure this points to the correct output directory
+      - name: Package build output
+        run: zip -r build_output.zip build/Release/* # Create a zip file of the build output
 
       - name: Upload Artifacts
         uses: actions/upload-artifact@v3
@@ -55,9 +55,9 @@ jobs:
         if: github.event_name != 'pull_request'
         with:
           repo_token: ${{ secrets.GITHUB_TOKEN }}
-          file: output.zip # Update this if your zip file has a different name or path
+          file: build_output.zip # Reference the created zip file
           tag: ${{ github.ref }}
           release_name: HoRNDIS
           body: Update objective-c-xcode.yml
-          file_glob: false # Set to false if specifying individual files
+          file_glob: false
           overwrite: true
