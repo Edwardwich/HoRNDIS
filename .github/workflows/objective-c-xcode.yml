@@ -17,33 +17,40 @@ jobs:
     env:
       JOB_TYPE: BUILD
     steps:
-      - uses: actions/checkout@v3
-      - uses: actions/checkout@v3
+      - name: Checkout repository
+        uses: actions/checkout@v3
+      
+      - name: Checkout MacKernelSDK
+        uses: actions/checkout@v3
         with:
           repository: acidanthera/MacKernelSDK
           path: MacKernelSDK
+
       - name: CI Bootstrap
         run: |
           src=$(/usr/bin/curl -Lfs https://raw.githubusercontent.com/acidanthera/ocbuild/master/ci-bootstrap.sh) && eval "$src" || exit 1
+
       - name: Lilu Bootstrap
         run: |
           src=$(/usr/bin/curl -Lfs https://raw.githubusercontent.com/acidanthera/Lilu/master/Lilu/Scripts/bootstrap.sh) && eval "$src" || exit 1
 
-      - run: xcodebuild -configuration=Release
-      - name: Upload to Artifacts
+      - name: Build project
+        run: xcodebuild -configuration=Release
+
+      - name: Upload Artifacts
         uses: actions/upload-artifact@v3
         with:
           name: Artifacts
           path: build/Release
+
       - name: Upload build
-      uses: svenstaro/upload-release-action@2.9.0
-      if: github.event_name != 'pull_request'
-      with:
-         repo_token: ${{ secrets.GITHUB_TOKEN }}
-         file: ./*.zip
-         tag: ${{ github.ref }}
-         release_name: HoRNDIS
-         body: ${{ github.event_name != 'release' && github.event.head_commit.message || '' }}
-         file_glob: true
-         overwrite: true    
- 
+        uses: svenstaro/upload-release-action@2.9.0
+        if: github.event_name != 'pull_request'
+        with:
+          repo_token: ${{ secrets.GITHUB_TOKEN }}
+          file: ./*.zip
+          tag: ${{ github.ref }}
+          release_name: HoRNDIS
+          body: ${{ github.event_name != 'release' && github.event.head_commit.message || '' }}
+          file_glob: true
+          overwrite: true
