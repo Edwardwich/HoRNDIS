@@ -40,6 +40,7 @@
 // #include <IOKit/pwr_mgt/RootDomain.h>
 
 
+
 #define V_PTR 0
 #define V_PACKET 1
 #define V_DEBUG 2
@@ -58,90 +59,6 @@
 
 OSDefineMetaClassAndStructors(HoRNDIS, IOEthernetController);
 OSDefineMetaClassAndStructors(HoRNDISInterface, IOEthernetInterface);
-
-/* 
-================================================================
-DESCRIPTION OF DEVICE DRIVER MATCHING (+ Info.plist description)
-================================================================
-The HoRNDIS driver classes are only instantiated when the MacOS matches 
-"IOKitPersonalities" dictionary entries to the existing devices. The matching 
-can be done 2 based on two different provider classes:
- 
- - IOUSBHostInterface - matches an interface under a USB device. Here, we match
-   based on the interface class/subclass/protocol. In order for the matching to
-   work, some other driver has to open the USB device and call 
-   "setConfiguration" method with matchInterfaces=true.
-   The interface matching works out-of-the-box for interfaces under USB
-   Composite Devices (class/subclass/protocol are 0/0/0), since there is an OS 
-   driver that opens such devices for matching.
- 
- - IOUSBHostDevice - match is performed on the whole device. Here, we match 
-   based on class/subclass/protocol. The start method needs to call 
-   'setConfiguration' in order for any IOUSBHostInterface instances under the 
-   device to become available. If it specifies 'matchInterfaces', matching is 
-   then performed on newly-created IOUSBHostInterfaces.
-
-OUR APPROACH:
-We'll match based on either device or interface, and let the probe and start 
-methods handle the difference. Not calling setConfiguration with matchInterfaces
-for now: if it's not a USB composite device, consider that we own it.
- 
-Subsequent logic:
-After MacOS finds a match based on Info.plist, it instantiates the driver class,
-and calls the 'probe' method that looks at descriptors and decides if this is 
-really the device we care about (e.g. fine-grained filtering), and sets the 
-"probeXxx" variables. Then, 'start' method calls 'openUSBInterfaces' that 
-blindly follows the "probeXxx" variables to get the needed IOUSBHostInterface 
-values from the opened device.
-
-==========================
-||  DEVICE VARIATIONS
-==========================
-This section must document ALL different variations of the devices that we
-may be dealing with, so we have the whole picture when updating the "probe"
-code or "Info.plist". Notation:
- * Device: 224 / 0 / 0
-   - bDeviceClass / bDeviceSubClass / bDeviceProtocol
- * Interface Associaton[2]: 224 / 1 / 3
-   - [bInterfaceCount]:  bFunctionClass / bFunctionSubClass / bFunctionProtocol
- * Interface: 224 / 3 / 1
-   -  bInterfaceClass / bInterfaceSubClass / bInterfaceProtocol
-
-[*] "Stock" Android. I believe most Android phone tethering should behave
-    this way
-    * USBCompositeDevice: 0 / 0 / 0
-      - InterfaceAssociation[2] 224 / 1 / 3
-        - ControlInterface: 224 / 1 / 3
-        - DataInterface:     10 / 0 / 0
-    * Info.plist entry: RNDISControlStockAndroid(interface)
-
-[*] Linux USB Gadget drivers. Location:
-    <LINUX_KERNEL>/drivers/usb/gadget/function/f_rndis.c
-    These show up in various embedded Linux boards, such as Beagle Board,
-    Analog Devices PlutoSDR, etc.
-    * USBCompositeDevice: 0 / 0 / 0
-      - InterfaceAssociation[2]: Configurable (e.g. 2/6/0, 239/4/1).
-        - ControlInterface:  2 / 2 / 255
-        - DataInterface:    10 / 0 / 0
-    * Info.plist entry: RNDISControlLinuxGadget(interface)
-
-[*] Wireless Controller Device (class 224). Some Samsung phones (e.g. S7 Edge) 
-    specify device class 224 for tethering, instead of just being a USB
-    composite device. The rest is the same as in "stock" Android.
-    Note, the other Samsung phones (e.g. S8) behave like other Android devices.
-	* Device: 224 / 0 / 0
-	  - (same as "Stock" Android)
-
-[*] Composite Device, using 0xEF/4/1 for RNDIS control: Nokia 7 Plus (issue #88)
-    Also may apply to Sony Xperia XZ.
-    This matches "RNDIS over Ethernet" specification given here:
-	http://www.usb.org/developers/defined_class/#BaseClassEFh
-    * USBCompositeDevice: 0 / 0 / 0
-	  - InterfaceAssociation[2]: 239 / 4 / 1
-        - ControlInterface: 239 / 4 / 1
-        - DataInterface:     10 / 0 / 0
-	* Info.plist entry: RNDISControlMiscDeviceRoE(interface)
-*/
 
 // Detects the 224/1/3 - stock Android RNDIS control interface.
 static inline bool isRNDISControlStockAndroid(const InterfaceDescriptor *idesc) {
@@ -229,48 +146,6 @@ void HoRNDIS::free() {
 	super::free();
 }
 
-/*
-==================================================
-INTERFACE PROLIFERATION AND PROVIDER CLASS NAME
-==================================================
-PROBLEM:
- Every time you connect the same Android device (or somewhat more rarely),
- MacOS creates a new entry under "Network" configurations tab. These entries
- keep on coming on and on, polluting the configuration.
- 
-ROOT CAUSE:
- Android devices randomly-generate Ethernet MAC address for
- RNDIS interface, so the system may think there is a new device
- every time you connect an Android phone, and may create a new
- network interface every such time.
- Luckily, it does extra check when Network Provider is a USB device:
- in that case, it would match based on USB data, creating an entry like:
-		<key>SCNetworkInterfaceInfo</key>
-		<dict>
-			<key>USB Product Name</key>
-			<string>Pixel 2</string>
-			<key>UserDefinedName</key>
-			<string>Pixel 2</string>
-			<key>idProduct</key>
-			<integer>20195</integer>
-			...
- In: /Library/Preferences/SystemConfiguration/NetworkInterfaces.plist
- When that works, interfaces do not proliferate (at least in most cases).
-
-PROBLEM CAUSE:
- The MacOS network daemon (or whatever it is) looks at interface's 
- "IOProviderClass" to see if it's USB Device. Unfortunately, it may not pick
- up all the names, e.g. it may trigger off the old "IOUSBDevice", but not
- the new "IOUSBHostDevice". This problem is present in El Capitan for both
- device and the interface, and seems to be present in later systems for 
- IOUSBDevice.
- 
-FIX/HACK:
- The IOUSBHostDevice and IOUSBHostInterface providers actually specify
- the "IOClassNameOverride" that gives the old name. We just take this value
- and update our "IOProviderClass" to that.
-*/
-
 bool HoRNDIS::start(IOService *provider) {
 	LOG(V_DEBUG, ">");
 
@@ -334,20 +209,6 @@ bailout:
 
 bool HoRNDIS::willTerminate(IOService *provider, IOOptionBits options) {
 	LOG(V_DEBUG, ">");
-	// The 'willTerminate' is called when USB device disappears - the user
-	// either disconnected the USB, or switched-off tethering. It's likely
-	// that the pending read has already invoked a callback with unreachable
-	// device or aborted status, and already terminated. If not, closing of
-	// the USB Data interface would force it to abort.
-	//
-	// Note, per comments in 'IOUSBHostInterface.h' (for some later version
-	// of MacOS SDK), this is the recommended place to close USB interfaces.
-	//
-	// This happens before ::stop, but after some of the read jobs fail
-	// with kIOReturnNotResponding (and some of the writers might fail,
-	// too).  ::disable happens sometime after we get done here, too --
-	// potentially invoked by super::willTerminate.
-	
 	disableNetworkQueue();
 	closeUSBInterfaces();
 
@@ -634,7 +495,9 @@ IONetworkInterface *HoRNDIS::createInterface() {
 		netif->release();
 		return NULL;
 	}
-	
+	netif->setProperty("IOMediaName", "USB Bridge");
+	netif->setProperty("kUSBProductString", "USB Bridge");
+	netif->setProperty("USB Product Name", "USB Bridge");
 	return netif;
 }
 
@@ -1365,28 +1228,6 @@ IOReturn HoRNDIS::rndisCommand(struct rndis_msg_hdr *buf, int buflen) {
 			return kIOReturnError;
 		}
 	}
-
-	// The RNDIS control messages are done via 'deviceRequest' - issue control
-	// transfers on the device's default endpoint. Per [MSDN-RNDISUSB], if
-	// a device is not ready (for some reason) to reply with the actual data,
-	// it shall send a one-byte reply indicating an error, rather than stall
-	// the control pipe. The retry loop below is a hackish way of waiting
-	// for the reply.
-	//
-	// Per [MSDN-RNDISUSB], once the driver sends a OUT device transfer, it
-	// should wait for a notification on the interrupt endpoint from
-	// fCommInterface, and only then perform a device request to retrieve
-	// the result. Whether Android does that correctly is something I need to
-	// investigate.
-	//
-	// Also, RNDIS specifies that the device may be sending
-	// REMOTE_NDIS_INDICATE_STATUS_MSG on its own. How much this applies to
-	// Android or embedded Linux devices needs to be investigated.
-	//
-	// Reference:
-	// https://docs.microsoft.com/en-us/windows-hardware/drivers/network/control-channel-characteristics
-
-	// Now we wait around a while for the device to get back to us.
 	int count;
 	for (count = 0; count < 10; count++) {
 		DeviceRequest rq;
